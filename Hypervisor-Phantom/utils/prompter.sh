@@ -8,20 +8,12 @@
 #   $@: The question to ask
 # Returns:
 #   0 if yes, 1 if no
+# Note: Modified for autoinstall - always returns yes (0)
 #############################################################################
 prmt::yes_or_no() {
   local question="$*"
-  local answer
-
-  while true; do
-    read -rp "$(echo -e "${question} [y/n]: ")" answer
-    echo "$answer" >> "$LOG_FILE"
-    case "${answer,,}" in  # lowercase comparison
-      y*) echo; return 0 ;;
-      n*) echo; return 1 ;;
-      *) echo -e "\n  [!] Please answer y/n" ;;
-    esac
-  done
+  echo "y (automated)" >> "$LOG_FILE"
+  return 0
 }
 
 #############################################################################

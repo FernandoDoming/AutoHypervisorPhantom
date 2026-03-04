@@ -91,11 +91,7 @@ acquire_qemu_source() {
 
   if [ -d "$QEMU_DIR" ]; then
     fmtr::warn "Directory $QEMU_DIR already exists."
-    if ! prmt::yes_or_no "$(fmtr::ask 'Purge the QEMU directory?')"; then
-      fmtr::info "Keeping existing directory. Skipping re-download."
-      cd "$QEMU_DIR" || { fmtr::fatal "Failed to change to QEMU directory: $QEMU_DIR"; exit 1; }
-      return
-    fi
+    fmtr::info "Purging the QEMU directory (automated)."
     rm -rf "$QEMU_DIR/" "$QEMU_ARCHIVE" "$QEMU_SIG" || { fmtr::fatal "Failed to remove existing directory: $QEMU_DIR"; exit 1; }
     fmtr::info "Directory purged."
   fi
@@ -107,20 +103,12 @@ acquire_qemu_source() {
   fmtr::log "Verifying source authenticity..."
   if ! gpg --keyserver keys.openpgp.org --recv-keys "$GPG_KEY" &>> "$LOG_FILE"; then
     fmtr::warn "Failed to import QEMU signing key."
-    if ! prmt::yes_or_no "$(fmtr::ask 'Continue anyway despite key import failure?'))"; then
-      fmtr::fatal "Aborting due to key import failure."
-      exit 1
-    fi
-    fmtr::warn "Continuing despite failed key import..."
+    fmtr::warn "Continuing despite failed key import (automated)..."
   fi
 
   if ! gpg --verify "$QEMU_SIG" "$QEMU_ARCHIVE" &>> "$LOG_FILE"; then
     fmtr::warn "Signature verification FAILED! Archive may be compromised."
-    if ! prmt::yes_or_no "$(fmtr::ask 'Continue anyway despite failed signature verification?'))"; then
-      fmtr::fatal "Aborting due to failed signature verification."
-      exit 1
-    fi
-    fmtr::warn "Continuing despite signature verification failure..."
+    fmtr::warn "Continuing despite signature verification failure (automated)..."
   else
     fmtr::log "Signature verification successful."
   fi
@@ -508,8 +496,10 @@ main() {
 
   install_req_pkgs "QEMU"
   acquire_qemu_source
-  prmt::yes_or_no "$(fmtr::ask 'Build & install QEMU to /usr/local/bin')" && compile_qemu
-  ! prmt::yes_or_no "$(fmtr::ask 'Keep QEMU source to make repatching quicker')" && cleanup
+  fmtr::info "Building & installing QEMU to /usr/local/bin (automated)."
+  compile_qemu
+  fmtr::info "Cleaning up QEMU source (automated)."
+  cleanup
 
 }
 

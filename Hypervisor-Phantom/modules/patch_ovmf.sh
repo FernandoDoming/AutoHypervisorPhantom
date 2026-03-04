@@ -42,23 +42,11 @@ acquire_edk2_source() {
 
   if [ -d "$EDK2_TAG" ]; then
     fmtr::warn "EDK2 source directory '$EDK2_TAG' detected."
-    if prmt::yes_or_no "$(fmtr::ask 'Purge EDK2 source directory?')"; then
-      rm -rf "$EDK2_TAG" || { fmtr::fatal "Failed to remove existing directory: $EDK2_TAG"; exit 1; }
-      fmtr::info "Directory purged successfully."
-      if prmt::yes_or_no "$(fmtr::ask 'Clone the EDK2 repository?')"; then
-        clone_init
-      else
-        fmtr::info "Skipping clone; nothing to patch since source was purged."
-      fi
-    else
-      fmtr::info "Kept existing directory; skipping deletion."
-      cd "$EDK2_TAG" || { fmtr::fatal "Failed to enter EDK2 directory: $EDK2_TAG"; exit 1; }
-      if prmt::yes_or_no "$(fmtr::ask 'Patch EDK2?')"; then
-        patch_ovmf
-      else
-        fmtr::info "Skipping patch."
-      fi
-    fi
+    fmtr::info "Purging EDK2 source directory (automated)."
+    rm -rf "$EDK2_TAG" || { fmtr::fatal "Failed to remove existing directory: $EDK2_TAG"; exit 1; }
+    fmtr::info "Directory purged successfully."
+    fmtr::info "Cloning the EDK2 repository (automated)."
+    clone_init
   else
     clone_init
   fi
@@ -75,62 +63,14 @@ patch_ovmf() {
   git apply < "$PATCH_DIR/$OVMF_PATCH" &>>"$LOG_FILE" || { fmtr::error "Failed to apply patch '$OVMF_PATCH'!"; return 1; }
   fmtr::info "Patch '$OVMF_PATCH' applied successfully."
 
-  fmtr::log "Choose BGRT BMP boot logo image option for OVMF:"
-  fmtr::format_text '\n  ' "[1]" " Apply host's (default)" "$TEXT_BRIGHT_YELLOW"
-  fmtr::format_text '  ' "[2]" " Apply custom (provide path)" "$TEXT_BRIGHT_YELLOW"
-
-  validate_bmp() {
-    local -a h
-    readarray -t h < <(od -An -v -j0 -N54 -t u1 -w1 "$1")
-
-    local wh=$(( h[18] + (h[19]<<8) + (h[20]<<16) + (h[21]<<24) )) \
-          ht=$(( h[22] + (h[23]<<8) + (h[24]<<16) + (h[25]<<24) )) \
-          bd=$(( h[28] + (h[29]<<8) )) \
-          cn=$(( h[30] + (h[31]<<8) + (h[32]<<16) + (h[33]<<24) ))
-
-    width=$wh; height=$ht; bit_depth=$bd; compression=$cn
-
-    if (( h[0] != 66 || h[1] != 77 || (bd != 1 && bd != 4 && bd != 8 && bd != 24) || cn != 0 || wh > 65535 || ht > 65535 )); then
-      fmtr::error "INVALID: ${width}×${height} (≤65535×65535), ${bit_depth}-bit (1/4/8/24-bit), ${compression} (0 compression)"
-      return 1
-    fi
-  }
-
-  while :; do
-    read -rp "$(fmtr::ask 'Enter choice [1-2]: ')" logo_choice && : "${logo_choice:=1}"
-    case "$logo_choice" in
-      1)
-        if [ -f /sys/firmware/acpi/bgrt/image ]; then
-          cp /sys/firmware/acpi/bgrt/image MdeModulePkg/Logo/Logo.bmp \
-            && fmtr::info "Image replaced successfully." \
-            || fmtr::error "Image not found or failed to copy."
-        else
-          fmtr::error "Host BMP image not found."
-        fi
-        break
-        ;;
-      2)
-        while :; do
-          read -rp "$(fmtr::ask 'Enter absolute path to your BMP image: ')" custom_bmp
-          if [ ! -f "$custom_bmp" ]; then
-            fmtr::error "File does not exist. Try again."
-            continue
-          fi
-
-          if validate_bmp "$custom_bmp"; then
-            fmtr::info "VALID: ${width}×${height} (≤65535×65535), ${bit_depth}-bit (1/4/8/24-bit), ${compression} (0 compression)"
-            cp "$custom_bmp" MdeModulePkg/Logo/Logo.bmp \
-              && fmtr::info "Custom BMP copied successfully." \
-              || fmtr::error "Failed to copy custom BMP."
-            break 2
-          fi
-        done
-        ;;
-      *)
-        fmtr::error "Invalid choice, try again."
-        ;;
-    esac
-  done
+  fmtr::log "Applying host's BGRT BMP boot logo image (automated - option 1)."
+  if [ -f /sys/firmware/acpi/bgrt/image ]; then
+    cp /sys/firmware/acpi/bgrt/image MdeModulePkg/Logo/Logo.bmp \
+      && fmtr::info "Image replaced successfully." \
+      || fmtr::error "Image not found or failed to copy."
+  else
+    fmtr::error "Host BMP image not found."
+  fi
 }
 
 ################################################################################
@@ -180,23 +120,13 @@ cert_injection() {
   for i in "${!VMS[@]}"; do
     fmtr::format_text '  ' "[$((i+1))]" " ${VMS[$i]}" "$TEXT_BRIGHT_YELLOW"
   done
-  fmtr::format_text '\n  ' "[0]" " Cancel" "$TEXT_BRIGHT_RED"
 
-  while :; do
-    read -rp "$(fmtr::ask "Enter your choice [0-${#VMS[@]}]: ")" vm_choice
-    case "$vm_choice" in
-      0) fmtr::log "Exiting Secure Boot certification injection setup."; rm -rf "$TEMP_DIR"; return ;;
-      ''|*[!0-9]*) fmtr::error "Invalid selection, try again." ;;
-      *)
-        (( vm_choice >= 1 && vm_choice <= ${#VMS[@]} )) || { fmtr::error "Invalid selection, try again."; continue; }
-        VM_NAME="${VMS[$((vm_choice-1))]}"
-        VARS_FILE="$NVRAM_DIR/${VM_NAME}_VARS.qcow2"
-        [ -f "$VARS_FILE" ] || { fmtr::fatal "File not found: $VARS_FILE"; exit 1; }
-        fmtr::log "Using '$VARS_FILE' as the base VARS file."
-        break
-        ;;
-    esac
-  done
+  fmtr::info "Selecting first VM automatically (automated - option 1)."
+  vm_choice=1
+  VM_NAME="${VMS[$((vm_choice-1))]}"
+  VARS_FILE="$NVRAM_DIR/${VM_NAME}_VARS.qcow2"
+  [ -f "$VARS_FILE" ] || { fmtr::fatal "File not found: $VARS_FILE"; exit 1; }
+  fmtr::log "Using '$VARS_FILE' as the base VARS file."
 
   fmtr::info "Downloading Microsoft's Secure Boot certifications..."
   declare -A CERTS=(
@@ -249,26 +179,12 @@ cleanup() {
 main() {
   install_req_pkgs "EDK2"
 
-  while :; do
-    fmtr::format_text '\n  ' "[1]" " Create patched OVMF" "$TEXT_BRIGHT_YELLOW"
-    fmtr::format_text '  ' "[2]" " VARS SB cert injection" "$TEXT_BRIGHT_YELLOW"
-    fmtr::format_text '\n  ' "[0]" " Exit" "$TEXT_BRIGHT_RED"
-
-    read -rp "$(fmtr::ask 'Enter choice [0-2]: ')" user_choice
-    case "$user_choice" in
-      1)
-        acquire_edk2_source
-        prmt::yes_or_no "$(fmtr::ask 'Create patched OVMF now?')" && compile_ovmf
-        ! prmt::yes_or_no "$(fmtr::ask 'Keep EDK2 source for faster re-patching?')" && cleanup
-        exit 0
-        ;;
-      2) cert_injection; exit 0 ;;
-      0) fmtr::info "Exiting."; exit 0 ;;
-      *) fmtr::error "Invalid option, please try again." ;;
-    esac
-
-    prmt::quick_prompt "$(fmtr::info 'Press any key to continue...')"
-  done
+  fmtr::info "Creating patched OVMF (automated - option 1)."
+  acquire_edk2_source
+  fmtr::info "Compiling patched OVMF (automated)."
+  compile_ovmf
+  fmtr::info "Cleaning up EDK2 source (automated)."
+  cleanup
 }
 
 main "$@"

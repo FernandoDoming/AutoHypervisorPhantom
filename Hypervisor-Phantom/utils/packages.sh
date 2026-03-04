@@ -7,27 +7,37 @@ install_req_pkgs() {
 
   fmtr::log "Checking for required missing $component packages..."
 
+  # Determine if we need sudo
+  local SUDO_CMD=""
+  if [[ $EUID -ne 0 ]]; then
+    SUDO_CMD="sudo"
+  fi
+
   # Determine package manager commands
   case "$DISTRO" in
     Arch)
       PKG_MANAGER="pacman"
-      INSTALL_CMD="sudo pacman -S --noconfirm"
+      INSTALL_CMD="$SUDO_CMD pacman -S --noconfirm"
       CHECK_CMD="pacman -Q"
+      UPDATE_CMD="$SUDO_CMD pacman -Sy"
       ;;
     Debian)
       PKG_MANAGER="apt"
-      INSTALL_CMD="sudo apt -y install"
+      INSTALL_CMD="$SUDO_CMD apt -y install"
       CHECK_CMD="dpkg -s"
+      UPDATE_CMD="$SUDO_CMD apt update"
       ;;
     openSUSE)
       PKG_MANAGER="zypper"
-      INSTALL_CMD="sudo zypper install -y"
+      INSTALL_CMD="$SUDO_CMD zypper install -y"
       CHECK_CMD="rpm -q"
+      UPDATE_CMD="$SUDO_CMD zypper refresh"
       ;;
     Fedora)
       PKG_MANAGER="dnf"
-      INSTALL_CMD="sudo dnf -yq install"
+      INSTALL_CMD="$SUDO_CMD dnf -yq install"
       CHECK_CMD="rpm -q"
+      UPDATE_CMD="$SUDO_CMD dnf check-update"
       ;;
     *)
       fmtr::error "Unsupported distribution: $DISTRO."
@@ -59,14 +69,20 @@ install_req_pkgs() {
 
   # Handle installation
   fmtr::warn "Missing required $component packages: ${MISSING_PKGS[*]}"
-  if prmt::yes_or_no "$(fmtr::ask "Install required missing $component packages?")"; then
-    if ! $INSTALL_CMD "${MISSING_PKGS[@]}" &>> "$LOG_FILE"; then
-      fmtr::error "Failed to install required $component packages"
-      exit 1
+  
+  # Update package cache for Debian-based systems
+  if [[ "$DISTRO" == "Debian" ]]; then
+    fmtr::info "Updating package cache..."
+    if ! $UPDATE_CMD &>> "$LOG_FILE"; then
+      fmtr::warn "Failed to update package cache, continuing anyway..."
     fi
-    fmtr::log "Installed: ${MISSING_PKGS[*]}"
-  else
-    fmtr::log "Exiting due to required missing $component packages."
+  fi
+  
+  fmtr::info "Installing required missing $component packages (automated)..."
+  if ! $INSTALL_CMD "${MISSING_PKGS[@]}" &>> "$LOG_FILE"; then
+    fmtr::error "Failed to install required $component packages"
+    fmtr::error "Check log file for details: $LOG_FILE"
     exit 1
   fi
+  fmtr::log "Installed: ${MISSING_PKGS[*]}"
 }
